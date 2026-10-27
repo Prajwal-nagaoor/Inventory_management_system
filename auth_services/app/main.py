@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from database import Base, engine, get_db
-from models import User
-from schemas import RegisterRequest, RegisterResponse
-from auth import hashed_password, check_password, storng_password, create_access_token, get_current_user
+from .database import Base, engine, get_db
+from .models import User
+from .schemas import RegisterRequest, RegisterResponse
+from .auth import hashed_password, check_password, storng_password, create_access_token, get_current_user
 app = FastAPI()
 
 
@@ -91,9 +91,7 @@ def login(username : str, password:str,db:Session=Depends(get_db)):
                 )
 
     access_token = create_access_token(
-        {"user_id":user_exists.id,
-         "email":user_exists.email,
-         "role":user_exists.role}
+        user_exists.id
     )
 
     return {
