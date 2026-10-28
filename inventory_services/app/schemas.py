@@ -45,7 +45,22 @@ class InventoryTransactionResponse(BaseModel):
     transaction_type : str
     quantity : int
     reason : Optional[str] = None
-    responsible_user_id : Optional[str] = None
+    responsible_user_id : Optional[int] = None
     created_at : Optional[datetime] = None
 
     model_config=ConfigDict(from_attributes=True)
+
+
+class StockReservationCreate(BaseModel):
+    product_id :int = Field(..., gt=0)
+    quantity : int = Field(..., gt=0)
+    order_id : Optional[int] = None
+class StockReservationResponse(BaseModel):
+    id : int
+    product_id : int
+    quantity:int
+    status : str
+    order_id : Optional[int] = None
+    created_at : Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)

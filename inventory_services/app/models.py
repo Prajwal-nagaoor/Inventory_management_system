@@ -29,6 +29,14 @@ class InventoryTransaction(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-        
-    
 
+class StockReservation(Base):
+    __tablename__ = "Stock_reservations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, nullable=False, index=True)
+    quantity = Column(Integer, nullable=False)
+    order_id = Column(Integer, nullable=True, index=True)
+    status = Column(String, default="RESERVED", nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
