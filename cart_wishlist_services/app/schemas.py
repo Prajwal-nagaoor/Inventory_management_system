@@ -10,11 +10,7 @@ class CartResponse(BaseModel):
     product_id : int
     quantity : int
     created_at : datetime
-
-class WishlistRequest(BaseModel):
-    user_id : int
-    product_id : int
-
+    
 class WishlistResponse(BaseModel):
     id : int
     user_id : int

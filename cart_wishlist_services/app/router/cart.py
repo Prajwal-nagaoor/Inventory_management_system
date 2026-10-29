@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import Base, engine, get_db
 from ..models import Cart, WishList
-from ..schemas import CartResponse, CartRequest, WishlistResponse,WishlistRequest
+from ..schemas import CartResponse, CartRequest, WishlistResponse
 from auth_services.app.auth import get_current_user
 from product_services.app.models import Products
 import httpx
@@ -16,6 +16,11 @@ def add_cart(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
+    if current_user.role != "customer":
+        raise HTTPException(
+            status_code=400,
+            detail="You are not allowd to add create cart only customer are allowed"
+        )
     # Validate quantity
     if cart_data.quantity < 1:
         raise HTTPException(
@@ -83,6 +88,11 @@ def add_cart(
         )
 @cart.get("/all-cart-item", response_model=list[CartResponse])
 def get_all_cart_items(db:Session=Depends(get_db), current_user=Depends(get_current_user)):
+    if current_user.role != "customer":
+        raise HTTPException(
+            status_code=400,
+            detail="You are not allowd to add wishlist only customer are allowed"
+        )
     cart_item = db.query(Cart).filter(
         Cart.user_id == current_user.id
     ).all()
@@ -93,3 +103,59 @@ def get_all_cart_items(db:Session=Depends(get_db), current_user=Depends(get_curr
         )
 
     return cart_item
+
+@cart.patch("/update-cart", response_model=CartResponse)
+def update_cart(cart_id:int, quantity:int, db:Session=Depends(get_db), current_user = Depends(get_current_user)):
+    if current_user.role != "customer":
+        raise HTTPException(
+            status_code=400,
+            detail="You are not allowd to add update cart only customer are allowed"
+        )
+    cart_item = db.query(Cart).filter(
+        Cart.id == cart_id,
+        Cart.user_id == current_user.id
+    ).first()
+
+    if cart_item is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Cart item is not found"
+        )
+    if quantity < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="quantity must be greater then 0"
+        )
+
+    cart_item.quantity = quantity
+    db.commit()
+    db.refresh(cart_item)
+
+    return cart_item
+
+@cart.delete("/delete-cart-item")
+def delete_cart_item(cart_id:int,db:Session=Depends(get_db), current_user=Depends(get_current_user)):
+    if current_user.role != "customer":
+        raise HTTPException(
+            status_code=400,
+            detail="You are not allowd to add delete cart only customer are allowed"
+        )
+    cart_item = db.query(Cart).filter(
+        Cart.id == cart_id,
+        Cart.user_id == current_user.id 
+    ).first()
+
+    if cart_item is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Cart item is not found"
+        )
+
+    db.delete(cart_item)
+    db.commit()
+
+    return {
+        "Message":f"Cart Items {cart_item.id} got deleted successfully" 
+    }
+
+    
