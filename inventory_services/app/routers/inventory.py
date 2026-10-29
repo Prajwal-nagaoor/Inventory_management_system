@@ -1,4 +1,4 @@
-
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -14,10 +14,58 @@ from ..schemas import (
     InventoryTransactionResponse,
 )
 from auth_services.app.auth import get_current_user
-
+from datetime import datetime, timedelta, timezone
 
 router = APIRouter(prefix="/inventory", tags=["Inventory"])
 
+def expire_reservations(db: Session):
+    now = datetime.now(timezone.utc)
+
+    expired_reservations = (
+        db.query(StockReservation)
+        .filter(
+            StockReservation.status == "RESERVED",
+            StockReservation.expires_at <= now
+        )
+        .all()
+    )
+
+    for reservation in expired_reservations:
+        item = (
+            db.query(Inventory)
+            .filter(
+                Inventory.product_id == reservation.product_id
+            )
+            .first()
+        )
+
+        if item is None:
+            continue
+
+        if item.reserved_quantity < reservation.quantity:
+            continue
+
+        item.reserved_quantity -= reservation.quantity
+        reservation.status = "EXPIRED"
+        reservation.released_at = now
+
+        transaction = InventoryTransaction(
+            product_id=reservation.product_id,
+            transaction_type="EXPIRE",
+            quantity=reservation.quantity,
+            reason=f"Reservation {reservation.id} expired"
+        )
+
+        db.add(transaction)
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to release expired reservations"
+        )
 
 # --------------------------------------------------
 # 1. GET LOW-STOCK INVENTORY
@@ -28,6 +76,7 @@ def get_low_stock_inventory(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    expire_reservations(db)
     inventory_items = db.query(Inventory).all()
     low_stock_items = []
 
@@ -54,6 +103,7 @@ def get_low_stock_inventory(
 # --------------------------------------------------
 @router.get("/", response_model=list[InventoryResponse])
 def get_all_inventory(db: Session = Depends(get_db)):
+    expire_reservations(db)
     inventory_items = db.query(Inventory).all()
 
     result = []
@@ -78,22 +128,39 @@ def get_all_inventory(db: Session = Depends(get_db)):
 # --------------------------------------------------
 # 3. CREATE INVENTORY
 # --------------------------------------------------
+
 @router.post("/", response_model=InventoryResponse, status_code=201)
 def create_inventory(
     inventory_data: InventoryCreate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    product_exists = db.query(Products).filter(
-        Products.id == inventory_data.product_id
-    ).first()
+    # Step 1: Validate the product through Product Service
+    try:
+        response = httpx.get(
+            "http://127.0.0.1:8001/get-id-product",
+            params={"p_id": inventory_data.product_id},
+            timeout=5.0,
+        )
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=503,
+            detail="Product Service is unavailable",
+        )
 
-    if not product_exists:
+    if response.status_code == 404:
         raise HTTPException(
             status_code=404,
-            detail="Product not found"
+            detail="Product not found",
         )
-    
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to validate product with Product Service",
+        )
+
+    # Step 2: Validate stock quantities
     if inventory_data.quantity < 0:
         raise HTTPException(
             status_code=400,
@@ -106,6 +173,7 @@ def create_inventory(
             detail="Low-stock threshold cannot be negative",
         )
 
+    # Step 3: Check for duplicate inventory
     existing_inventory = (
         db.query(Inventory)
         .filter(Inventory.product_id == inventory_data.product_id)
@@ -114,10 +182,11 @@ def create_inventory(
 
     if existing_inventory:
         raise HTTPException(
-            status_code=400,
+            status_code=409,
             detail="Inventory already exists for this product",
         )
 
+    # Step 4: Create the inventory record
     new_inventory = Inventory(
         product_id=inventory_data.product_id,
         quantity=inventory_data.quantity,
@@ -129,6 +198,7 @@ def create_inventory(
         db.add(new_inventory)
         db.flush()
 
+        # Step 5: Record the initial stock movement
         if inventory_data.quantity > 0:
             transaction = InventoryTransaction(
                 product_id=inventory_data.product_id,
@@ -149,6 +219,7 @@ def create_inventory(
             detail="Failed to create inventory",
         )
 
+    # Step 6: Return the inventory details
     return {
         "id": new_inventory.id,
         "product_id": new_inventory.product_id,
@@ -161,6 +232,7 @@ def create_inventory(
             new_inventory.quantity - new_inventory.reserved_quantity
         ),
     }
+
 
 
 # --------------------------------------------------
@@ -310,11 +382,12 @@ def reserve_stock(
         item.reserved_quantity += reserv_data.quantity
 
         new_reservation = StockReservation(
-            product_id=reserv_data.product_id,
-            quantity=reserv_data.quantity,
-            order_id=reserv_data.order_id,
-            status="RESERVED",
-        )
+    product_id=reserv_data.product_id,
+    quantity=reserv_data.quantity,
+    order_id=reserv_data.order_id,
+    status="RESERVED",
+    expires_at=datetime.now(timezone.utc) + timedelta(minutes=1)
+)
         db.add(new_reservation)
         db.flush()
 
@@ -457,6 +530,7 @@ def get_inventory_by_product(
     product_id: int,
     db: Session = Depends(get_db),
 ):
+    expire_reservations(db)
     item = (
         db.query(Inventory)
         .filter(Inventory.product_id == product_id)
