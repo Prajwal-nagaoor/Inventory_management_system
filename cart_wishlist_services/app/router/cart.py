@@ -7,7 +7,7 @@ from auth_services.app.auth import get_current_user
 from product_services.app.models import Products
 import httpx
 from datetime import datetime
-cart = APIRouter(prefix="/cart_items", tags=["cart"])
+cart = APIRouter(prefix="/cart", tags=["cart"])
 
 
 @cart.post("/add-cart", response_model=CartResponse)
@@ -86,6 +86,24 @@ def add_cart(
             status_code=500,
             detail="Failed to add product to cart"
         )
+@cart.get("/get-id-cart-item", response_model=CartResponse)
+def get_id_cart_item(
+    cart_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    cart_item = db.query(Cart).filter(
+        Cart.id == cart_id,
+        Cart.user_id == current_user.id
+    ).first()
+
+    if cart_item is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Cart item not found"
+        )
+
+    return cart_item
 @cart.get("/all-cart-item", response_model=list[CartResponse])
 def get_all_cart_items(db:Session=Depends(get_db), current_user=Depends(get_current_user)):
     if current_user.role != "customer":

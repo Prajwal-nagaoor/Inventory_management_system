@@ -525,7 +525,7 @@ def get_inventory_transaction(
 # 8. GET INVENTORY FOR ONE PRODUCT
 # Keep this dynamic route near the bottom.
 # --------------------------------------------------
-@router.get("/{product_id}", response_model=InventoryResponse)
+@router.get("/get-inventory/{product_id}", response_model=InventoryResponse)
 def get_inventory_by_product(
     product_id: int,
     db: Session = Depends(get_db),
