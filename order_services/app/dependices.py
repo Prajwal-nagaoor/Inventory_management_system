@@ -43,8 +43,8 @@ def getproduct(id: int):
             params={"p_id": id},
             timeout=5.0
         )
-        # print("Cart Service Status:", product_response.status_code)
-        # print("Cart Service Response:", product_response.text)
+        print("Cart Service Status:", product_response.status_code)
+        print("Cart Service Response:", product_response.text)
     except httpx.RequestError:
         raise HTTPException(
             status_code=503,
